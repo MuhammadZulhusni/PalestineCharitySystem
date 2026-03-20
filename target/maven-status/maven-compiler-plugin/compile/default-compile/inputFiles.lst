@@ -1,0 +1,17 @@
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/AddCampaignServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/AddUserServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/DeleteCampaignServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/DeleteUserServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/DonateServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/EditCampaignServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/ForgotPasswordServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/GetCampaignServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/LoginServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/LogoutServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/RegisterServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/ToggleCampaignServlet.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.dao/CampaignDAO.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.dao/UserDAO.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.model/Campaign.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.model/User.java
+/Users/admin/Downloads/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.util/DBConnection.java
