@@ -1,9 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    This file is configuration file for the Java EE web application.
+    It registers all Servlet classes and maps them to their respective URL patterns,
+    so when a user or form submits to a URL (e.g. /login), the server knows which
+    Java Servlet class should handle that request.
+
+    Structure of each entry:
+      <servlet>         = declares the servlet name and its Java class
+      <servlet-mapping> = maps a URL pattern to that servlet name
+-->
+
 <web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
          version="6.0">
 
+    <!--
+         AUTHENTICATION SERVLETS
+         Handles login, logout, registration, and forgot password flows -->
+    <!--
+        LoginServlet
+        Handles POST request from login.jsp form.
+        Verifies username and password using BCrypt.checkpw(),
+        creates an HttpSession, stores the User object,
+        then redirects to admin_dashboard.jsp or donor_dashboard.jsp
+        based on the user's role.
+        URL: /login
+    -->
     <servlet>
         <servlet-name>LoginServlet</servlet-name>
         <servlet-class>com.charity.controller.LoginServlet</servlet-class>
@@ -13,6 +37,13 @@
         <url-pattern>/login</url-pattern>
     </servlet-mapping>
 
+    <!--
+        LogoutServlet
+        Handles GET request when the user clicks Sign Out.
+        Calls session.invalidate() to destroy the current session
+        and redirects the user back to login.jsp.
+        URL: /logout
+    -->
     <servlet>
         <servlet-name>LogoutServlet</servlet-name>
         <servlet-class>com.charity.controller.LogoutServlet</servlet-class>
@@ -22,6 +53,14 @@
         <url-pattern>/logout</url-pattern>
     </servlet-mapping>
 
+    <!--
+        RegisterServlet
+        Handles POST request from register.jsp form.
+        Hashes the password and security answer using BCrypt.hashpw()
+        before inserting a new DONOR user record into the users table.
+        Redirects to login.jsp with ?msg=registered on success.
+        URL: /register
+    -->
     <servlet>
         <servlet-name>RegisterServlet</servlet-name>
         <servlet-class>com.charity.controller.RegisterServlet</servlet-class>
@@ -31,51 +70,16 @@
         <url-pattern>/register</url-pattern>
     </servlet-mapping>
 
-    <servlet>
-        <servlet-name>DonateServlet</servlet-name>
-        <servlet-class>com.charity.controller.DonateServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>DonateServlet</servlet-name>
-        <url-pattern>/donate</url-pattern>
-    </servlet-mapping>
-
-    <servlet>
-        <servlet-name>AddCampaignServlet</servlet-name>
-        <servlet-class>com.charity.controller.AddCampaignServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>AddCampaignServlet</servlet-name>
-        <url-pattern>/addCampaign</url-pattern>
-    </servlet-mapping>
-
-    <servlet>
-        <servlet-name>EditCampaignServlet</servlet-name>
-        <servlet-class>com.charity.controller.EditCampaignServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>EditCampaignServlet</servlet-name>
-        <url-pattern>/editCampaign</url-pattern>
-    </servlet-mapping>
-
-    <servlet>
-        <servlet-name>DeleteCampaignServlet</servlet-name>
-        <servlet-class>com.charity.controller.DeleteCampaignServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>DeleteCampaignServlet</servlet-name>
-        <url-pattern>/deleteCampaign</url-pattern>
-    </servlet-mapping>
-
-    <servlet>
-        <servlet-name>GetCampaignServlet</servlet-name>
-        <servlet-class>com.charity.controller.GetCampaignServlet</servlet-class>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>GetCampaignServlet</servlet-name>
-        <url-pattern>/getCampaign</url-pattern>
-    </servlet-mapping>
-
+    <!--
+        ForgotPasswordServlet
+        Handles POST request from forgot_password.jsp.
+        Step 1: Receives username, looks up security question from DB.
+        Step 2: Verifies security answer using BCrypt.checkpw(),
+                hashes the new password with BCrypt.hashpw(),
+                updates the password in the users table,
+                then redirects to forgot_password.jsp with ?msg=pwreset.
+        URL: /forgotPassword
+    -->
     <servlet>
         <servlet-name>ForgotPasswordServlet</servlet-name>
         <servlet-class>com.charity.controller.ForgotPasswordServlet</servlet-class>
@@ -85,6 +89,91 @@
         <url-pattern>/forgotPassword</url-pattern>
     </servlet-mapping>
 
+
+    <!--
+         CAMPAIGN MANAGEMENT SERVLETS (admin)
+         Each servlet checks session and role before executing. -->
+    <!--
+        AddCampaignServlet
+        Handles POST request from the New Campaign form in admin_dashboard.jsp.
+        Reads title, target amount, and description from the request,
+        inserts a new campaign record into the campaigns table with
+        status = 'ACTIVE' by default.
+        Redirects to admin_dashboard.jsp with ?msg=added on success.
+        URL: /addCampaign
+    -->
+    <servlet>
+        <servlet-name>AddCampaignServlet</servlet-name>
+        <servlet-class>com.charity.controller.AddCampaignServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>AddCampaignServlet</servlet-name>
+        <url-pattern>/addCampaign</url-pattern>
+    </servlet-mapping>
+
+    <!--
+        EditCampaignServlet
+        Handles GET request when admin saves changes in the Edit Campaign modal.
+        Reads updated title, target amount, and description from URL parameters,
+        runs UPDATE SQL on the campaigns table for the given campaign id.
+        Redirects to admin_dashboard.jsp with ?msg=updated on success.
+        URL: /editCampaign
+    -->
+    <servlet>
+        <servlet-name>EditCampaignServlet</servlet-name>
+        <servlet-class>com.charity.controller.EditCampaignServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>EditCampaignServlet</servlet-name>
+        <url-pattern>/editCampaign</url-pattern>
+    </servlet-mapping>
+
+    <!--
+        DeleteCampaignServlet
+        Handles GET request when admin confirms campaign deletion.
+        Checks if the campaign has any existing donations first,
+        if it does, redirects with ?msg=has_donations to prevent deletion
+        and protect data integrity.
+        If no donations exist, runs DELETE SQL on the campaigns table.
+        Redirects to admin_dashboard.jsp on completion.
+        URL: /deleteCampaign
+    -->
+    <servlet>
+        <servlet-name>DeleteCampaignServlet</servlet-name>
+        <servlet-class>com.charity.controller.DeleteCampaignServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>DeleteCampaignServlet</servlet-name>
+        <url-pattern>/deleteCampaign</url-pattern>
+    </servlet-mapping>
+
+    <!--
+        GetCampaignServlet
+        Handles GET request via AJAX from the Edit Campaign modal in admin_dashboard.jsp.
+        Fetches a single campaign by id using CampaignDAO.getCampaignById(),
+        and returns the campaign data as a JSON response so the modal can
+        pre-populate the edit fields with current values.
+        URL: /getCampaign
+    -->
+    <servlet>
+        <servlet-name>GetCampaignServlet</servlet-name>
+        <servlet-class>com.charity.controller.GetCampaignServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>GetCampaignServlet</servlet-name>
+        <url-pattern>/getCampaign</url-pattern>
+    </servlet-mapping>
+
+    <!--
+        ToggleCampaignServlet
+        Handles GET request when admin clicks Activate or Deactivate button.
+        Reads the current status of the campaign from the DB,
+        then flips it, ACTIVE becomes INACTIVE, INACTIVE becomes ACTIVE
+        using UPDATE SQL on the campaigns table.
+        Inactive campaigns are hidden from donors and cannot receive donations.
+        Redirects to admin_dashboard.jsp with ?msg=toggled on success.
+        URL: /toggleCampaign
+    -->
     <servlet>
         <servlet-name>ToggleCampaignServlet</servlet-name>
         <servlet-class>com.charity.controller.ToggleCampaignServlet</servlet-class>
@@ -94,6 +183,45 @@
         <url-pattern>/toggleCampaign</url-pattern>
     </servlet-mapping>
 
+
+    <!--
+         DONATION SERVLET
+         Handles donation submissions from donors. -->
+    <!--
+        DonateServlet
+        Handles POST request from the donate form in donor_dashboard.jsp.
+        Reads the campaign id and amount from the form,
+        validates the amount (minimum RM 1.00),
+        inserts a new record into the donations table with the
+        current user id, campaign id, amount, and current timestamp.
+        Also updates current_amount in the campaigns table.
+        Redirects to donor_dashboard.jsp with ?status=success or ?status=error.
+        URL: /donate
+    -->
+    <servlet>
+        <servlet-name>DonateServlet</servlet-name>
+        <servlet-class>com.charity.controller.DonateServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>DonateServlet</servlet-name>
+        <url-pattern>/donate</url-pattern>
+    </servlet-mapping>
+
+
+    <!--
+         USER MANAGEMENT SERVLETS
+         Admin-only features for creating and removing
+         user accounts from the Users section. -->
+    <!--
+        AddUserServlet
+        Handles GET request when admin submits the Add New User modal.
+        Checks if the username already exists in the users table.
+        If not, hashes the password and security answer using BCrypt.hashpw(),
+        then inserts the new user with the selected role (ADMIN or DONOR).
+        Redirects to admin_dashboard.jsp with ?msg=user_added&section=users on success,
+        or ?msg=user_exists&section=users if the username is already taken.
+        URL: /addUser
+    -->
     <servlet>
         <servlet-name>AddUserServlet</servlet-name>
         <servlet-class>com.charity.controller.AddUserServlet</servlet-class>
@@ -103,6 +231,15 @@
         <url-pattern>/addUser</url-pattern>
     </servlet-mapping>
 
+    <!--
+        DeleteUserServlet
+        Handles GET request when admin confirms user deletion.
+        First verifies the target user is not the currently logged-in admin
+        to prevent self-deletion.
+        Deletes all donation records belonging to the user first (FK constraint),
+        then deletes the user record from the users table.
+        URL: /deleteUser
+    -->
     <servlet>
         <servlet-name>DeleteUserServlet</servlet-name>
         <servlet-class>com.charity.controller.DeleteUserServlet</servlet-class>
@@ -111,6 +248,12 @@
         <servlet-name>DeleteUserServlet</servlet-name>
         <url-pattern>/deleteUser</url-pattern>
     </servlet-mapping>
+
+
+    <!--
+         WELCOME FILE
+         The default page loaded when accessing the root URL.
+         e.g. http://localhost:8080/ -->
 
     <welcome-file-list>
         <welcome-file>index.jsp</welcome-file>
