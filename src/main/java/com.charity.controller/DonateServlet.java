@@ -11,6 +11,8 @@ import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 
 /**
  * DonateServlet — Handles donation form submission from donor_dashboard.jsp.
@@ -63,43 +65,53 @@ public class DonateServlet extends HttpServlet {
 
         try {
             conn = DBConnection.getConnection();
-
-            // Disable auto-commit to start manual transaction
-            // This means nothing is saved until conn.commit() is called
             conn.setAutoCommit(false);
+
+            // ── GUARD: Check remaining goal before accepting donation ────
+            // Fetch how much is still needed for this campaign
+            // Also verifies campaign exists and is ACTIVE in the same query
+            String checkSql = "SELECT (target_amount - current_amount) AS remaining " +
+                    "FROM campaigns WHERE id = ? AND status = 'ACTIVE'";
+            try (PreparedStatement checkPs = conn.prepareStatement(checkSql)) {
+                checkPs.setInt(1, campaignId);
+                ResultSet checkRs = checkPs.executeQuery();
+
+                if (!checkRs.next()) {
+                    // Campaign not found or is not ACTIVE
+                    conn.rollback();
+                    response.sendRedirect("donor_dashboard.jsp?status=error");
+                    return;
+                }
+
+                double remaining = checkRs.getDouble("remaining");
+
+                if (amount > remaining) {
+                    // Donation exceeds what the campaign still needs
+                    conn.rollback();
+                    response.sendRedirect("donor_dashboard.jsp?status=exceeds_goal");
+                    return;
+                }
+            }
 
             DonationDAO donationDAO = new DonationDAO();
 
             // Step 1: Add donated amount to campaign's current_amount
-            // Uses: UPDATE campaigns SET current_amount = IFNULL(current_amount,0) + ? WHERE id = ?
             donationDAO.updateCampaignTotal(conn, campaignId, amount);
 
             // Step 2: Insert new donation record into donations table
-            // Uses: INSERT INTO donations (user_id, campaign_id, amount) VALUES (?, ?, ?)
             donationDAO.insertDonation(conn, userId, campaignId, amount);
 
-            // Both operations succeeded — save changes permanently
             conn.commit();
-
-            // Redirect back to donor dashboard with success alert
             response.sendRedirect("donor_dashboard.jsp?status=success");
 
         } catch (SQLException e) {
-
-            // Something went wrong — undo BOTH operations
-            // so campaign total and donation records stay in sync
             if (conn != null) {
                 try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
             }
-
             e.printStackTrace();
-
-            // Redirect back to donor dashboard with error alert
             response.sendRedirect("donor_dashboard.jsp?status=error");
 
         } finally {
-
-            // Always close the connection whether success or failure
             if (conn != null) {
                 try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
             }

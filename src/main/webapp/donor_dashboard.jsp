@@ -430,7 +430,11 @@
                 <div class="camp-card-bottom">
                     <form action="donate" method="post" style="display:flex;gap:8px;width:100%;" onsubmit="return validateDonate(this)">
                         <input type="hidden" name="campaignId" value="<%= c.getId() %>">
-                        <input type="number" name="amount" placeholder="Amount (RM)" min="1" step="0.01"
+                        <%-- Calculate remaining outside the input tag for cleanliness --%>
+                        <% double remaining = c.getTargetAmount() - c.getCurrentAmount(); %>
+                        <input type="number" name="amount" placeholder="Amount (RM)"
+                               min="1" step="0.01" max="<%= String.format("%.2f", remaining) %>"
+                               data-remaining="<%= String.format("%.2f", remaining) %>"
                                class="donate-input" required>
                         <button type="submit" class="btn-donate">Donate</button>
                     </form>
@@ -505,6 +509,13 @@
                 <tr><td colspan="3"><div class="empty-state">You haven't made any donations yet. Start giving today! 🤲</div></td></tr>
                 <% } %>
             </tbody>
+            <tbody id="noResultsRow" style="display:none;">
+                <tr>
+                    <td colspan="3">
+                        <div class="empty-state">No donations found matching your search.</div>
+                    </td>
+                </tr>
+            </tbody>
         </table>
     </div>
 
@@ -552,27 +563,49 @@
        Checks that amount is a valid number and at least RM 1.00.
        Returns false to block submission and show SweetAlert2 warning.
        Returns true to allow the form to submit to DonateServlet. */
-    function validateDonate(form) {
-        var amt = parseFloat(form.amount.value);
-        if (!amt || amt < 1) {
-            Swal.fire(Object.assign({}, getSwalBase(), {
-                title: 'Invalid Amount',
-                text: 'Please enter a minimum donation of RM 1.00.',
-                icon: 'warning', iconColor: '#f4a261',
-            }));
-            return false; // Block form submission
+        function validateDonate(form) {
+            var amt = parseFloat(form.amount.value);
+            var remaining = parseFloat(form.amount.getAttribute('data-remaining'));
+
+            if (!amt || amt < 1) {
+                Swal.fire(Object.assign({}, getSwalBase(), {
+                    title: 'Invalid Amount',
+                    text: 'Please enter a minimum donation of RM 1.00.',
+                    icon: 'warning', iconColor: '#f4a261',
+                }));
+                return false;
+            }
+
+            if (amt > remaining) {
+                Swal.fire(Object.assign({}, getSwalBase(), {
+                    title: 'Amount Exceeds Goal',
+                    html: '<p style="font-size:14px;line-height:1.6;">This campaign only needs <strong style="color:#1db954;">RM ' +
+                          remaining.toLocaleString('en-MY', {minimumFractionDigits:2}) +
+                          '</strong> more to reach its goal.<br>Please enter an amount within that limit.</p>',
+                    icon: 'warning', iconColor: '#f4a261',
+                }));
+                return false;
+            }
+
+            return true;
         }
-        return true; // Allow form submission to DonateServlet
-    }
 
     /* ── DONATION HISTORY SEARCH ────────────────────────────────
        Filters history table rows in real-time as user types.
        Hides rows that don't contain the search query. */
-    function filterHistory(q) {
-        document.querySelectorAll('#historyBody tr').forEach(function(r) {
-            r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
-        });
-    }
+        function filterHistory(q) {
+            var rows = document.querySelectorAll('#historyBody tr');
+            var visibleCount = 0;
+
+            rows.forEach(function(r) {
+                var match = r.textContent.toLowerCase().includes(q.toLowerCase());
+                r.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+
+            // Show or hide the "not found" message based on results
+            document.getElementById('noResultsRow').style.display = visibleCount === 0 ? '' : 'none';
+        }
 
     /* ── URL MESSAGE HANDLER ────────────────────────────────────
        After DonateServlet redirects back with ?status=success or ?status=error,
@@ -597,6 +630,15 @@
         Swal.fire(Object.assign({}, getSwalBase(), {
             title: 'Something went wrong',
             text: 'Your donation could not be processed. Please try again.',
+            icon: 'error', iconColor: '#e63946',
+        }));
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (params.get('status') === 'exceeds_goal') {
+        Swal.fire(Object.assign({}, getSwalBase(), {
+            title: 'Donation Blocked',
+            html: '<p style="font-size:14px;line-height:1.6;">Your amount exceeds what this campaign still needs.<br>Please refresh the page and try a smaller amount.</p>',
             icon: 'error', iconColor: '#e63946',
         }));
         window.history.replaceState({}, document.title, window.location.pathname);

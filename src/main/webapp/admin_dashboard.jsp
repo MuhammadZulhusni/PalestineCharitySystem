@@ -443,6 +443,9 @@
                 <% if(campaigns.isEmpty()){ %>
                 <tr><td colspan="6"><div class="empty-state">No campaigns yet. Create your first one.</div></td></tr>
                 <% } %>
+                <tr id="campaignBody-no-results" style="display:none;">
+                    <td colspan="6"><div class="empty-state">No campaigns match your search.</div></td>
+                </tr>
             </tbody>
         </table>
     </div>
@@ -481,6 +484,9 @@
                     <td class="amount-green">RM <%= String.format("%,.2f",rs.getDouble("amount")) %></td>
                 </tr>
                 <% } } catch(Exception e){} %>
+               <tr id="donationBody-no-results" style="display:none;">
+                   <td colspan="4"><div class="empty-state">No donations match your search.</div></td>
+               </tr>
             </tbody>
         </table>
     </div>
@@ -612,11 +618,21 @@
     /* ── TABLE SEARCH ───────────────────────────────────────────
        filterTable(id, q) — loops every <tr> in the target tbody
        and hides rows that don't contain the search term */
-    function filterTable(id, q) {
-        document.querySelectorAll('#' + id + ' tr').forEach(function(r){
-            r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
-        });
-    }
+        function filterTable(id, q) {
+            var rows = document.querySelectorAll('#' + id + ' tr');
+            var visibleCount = 0;
+
+            rows.forEach(function(r) {
+                // Skip the no-results row itself when counting
+                if (r.id === id + '-no-results') return;
+                var match = r.textContent.toLowerCase().includes(q.toLowerCase());
+                r.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+
+            var noResults = document.getElementById(id + '-no-results');
+            if (noResults) noResults.style.display = visibleCount === 0 ? '' : 'none';
+        }
 
     /* ── VIEW CAMPAIGN DETAILS ──────────────────────────────────
        Opens a SweetAlert2 modal showing campaign description
