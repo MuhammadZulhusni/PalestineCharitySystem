@@ -4,7 +4,9 @@ com/charity/controller/LogoutServlet.class
 com/charity/model/User.class
 com/charity/controller/AddCampaignServlet.class
 com/charity/util/DBConnection.class
+com/charity/model/Donation.class
 com/charity/controller/GetCampaignServlet.class
+com/charity/dao/DonationDAO.class
 com/charity/dao/CampaignDAO.class
 com/charity/controller/ToggleCampaignServlet.class
 com/charity/dao/UserDAO.class

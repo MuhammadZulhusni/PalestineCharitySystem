@@ -10,10 +10,17 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
+/**
+ * This servlet toggles a campaign's status between ACTIVE and INACTIVE.
+ * Used by admin to enable/disable campaigns without deleting them.
+ */
 public class ToggleCampaignServlet extends HttpServlet {
+
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
+        // Get campaign ID from request
         String idParam = request.getParameter("id");
         if (idParam == null) {
             response.sendRedirect("admin_dashboard.jsp");
@@ -21,8 +28,9 @@ public class ToggleCampaignServlet extends HttpServlet {
         }
 
         try (Connection conn = DBConnection.getConnection()) {
-            // Get current status
-            String current = "ACTIVE";
+
+            // Get current status of campaign
+            String current = "ACTIVE"; // default
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT status FROM campaigns WHERE id = ?")) {
                 ps.setInt(1, Integer.parseInt(idParam));
@@ -30,7 +38,7 @@ public class ToggleCampaignServlet extends HttpServlet {
                 if (rs.next()) current = rs.getString("status");
             }
 
-            // Toggle it
+            // Toggle status
             String newStatus = "ACTIVE".equals(current) ? "INACTIVE" : "ACTIVE";
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE campaigns SET status = ? WHERE id = ?")) {
@@ -39,7 +47,9 @@ public class ToggleCampaignServlet extends HttpServlet {
                 ps.executeUpdate();
             }
 
+            // Redirect back to admin dashboard
             response.sendRedirect("admin_dashboard.jsp?msg=toggled");
+
         } catch (Exception e) {
             e.printStackTrace();
             response.sendRedirect("admin_dashboard.jsp?error=db");

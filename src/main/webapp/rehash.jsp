@@ -1,7 +1,7 @@
 <%@ page import="org.mindrot.jbcrypt.BCrypt, com.charity.util.DBConnection, java.sql.*" %>
 <%
     String username = "admin";
-    String password = "Admin@123";  // change this to whatever you want
+    String password = "Admin@123";
 
     String hash = BCrypt.hashpw(password, BCrypt.gensalt(12));
 

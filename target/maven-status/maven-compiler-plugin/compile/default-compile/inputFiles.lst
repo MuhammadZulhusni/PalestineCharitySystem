@@ -11,7 +11,9 @@
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/RegisterServlet.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.controller/ToggleCampaignServlet.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.dao/CampaignDAO.java
+/Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.dao/DonationDAO.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.dao/UserDAO.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.model/Campaign.java
+/Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.model/Donation.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.model/User.java
 /Users/admin/Downloads/ESD Project/JavaEEProject/PalestineCharitySystem/src/main/java/com.charity.util/DBConnection.java
