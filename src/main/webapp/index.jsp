@@ -303,7 +303,7 @@
     <div class="nav-actions">
         <%-- Theme toggle: moon icon by default, calls toggleTheme() --%>
         <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
-        <%-- Sign In → login.jsp --%>
+        <%-- Sign In to login.jsp --%>
         <a href="login.jsp" class="nav-login">Sign In</a>
     </div>
 </nav>

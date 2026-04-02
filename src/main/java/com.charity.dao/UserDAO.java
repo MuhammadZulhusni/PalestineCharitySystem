@@ -6,172 +6,192 @@ import org.mindrot.jbcrypt.BCrypt;
 import java.sql.*;
 
 /**
- * UserDAO — Data Access Object for the users table.
+ * UserDAO, User Data Access Object
+ * This class handles ALL database tasks related to the users table.
  *
- * This class acts as the bridge between the User model and the MySQL database.
- * It belongs to the Data Access Layer in the MVC architecture, meaning all
- * database logic related to users is centralised here rather than scattered
- * across servlets or JSP pages.
+ * Think of it as the "middleman" between the servlet and the database:
+ *   Servlet  to  calls UserDAO  to  UserDAO talks to MySQL  to  returns result
  *
- * All queries use PreparedStatement to prevent SQL injection attacks.
- * Password and security answer verification uses BCrypt.checkpw() —
- * plain text values are NEVER compared directly against the database.
+ * Security rules applied in this class:
+ *    PreparedStatement   = prevents SQL Injection on every query
+ *    BCrypt.checkpw()    = passwords are NEVER compared as plain text
+ *    BCrypt.hashpw()     = new passwords are always hashed before saving
  *
- * Methods:
- *   - login()                  → verifies credentials, returns User object
- *   - getSecurityQuestion()    → fetches security question for forgot password Step 1
- *   - verifyAndResetPassword() → verifies answer and updates password for Step 2
+ * Methods in this class:
+ *   1. login()                  = check username & password, return User or null
+ *   2. getSecurityQuestion()    = get security question by username (Forgot Password Step 1)
+ *   3. verifyAndResetPassword() = verify answer & save new password  (Forgot Password Step 2)
  */
 public class UserDAO {
 
-    /**
-     * login() — Authenticates a user by username and password.
-     *
-     * How it works:
-     *   1. Fetches the user record from users table by username only
-     *      (never by password — BCrypt hashes cannot be queried with WHERE)
-     *   2. Uses BCrypt.checkpw() to verify entered password against stored hash
-     *   3. If match → builds and returns a User object stored in HttpSession
-     *   4. If no match or username not found → returns null
-     *
-     * The returned User object is stored in session by LoginServlet:
-     *   session.setAttribute("user", user)
-     * Every protected page then reads it:
-     *   User user = (User) session.getAttribute("user")
-     *
-     * @param username  plain text username from login form
-     * @param password  plain text password from login form
-     * @return          User object if credentials valid, null otherwise
-     */
+    // METHOD 1: login()
+    // PURPOSE : Checks if the username and password entered are correct.
+    //           Returns a User object if valid, or null if invalid.
+    // CALLED BY: LoginServlet = after user submits the login form
     public User login(String username, String password) {
 
-        // null by default — returned as null if login fails
+        // STEP 1 : Start with null.
+        //          If login fails at any point, null is returned automatically.
         User user = null;
 
-        // Fetch by username only — password checked in Java, not SQL
+        // STEP 2 : Prepare the SQL query.
+        //          We only search by USERNAME here.
+        //          We do NOT put the password inside the SQL query because
+        //          BCrypt passwords are hashed, cannot be matched with WHERE.
         String sql = "SELECT * FROM users WHERE username = ?";
 
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
+            // STEP 3 : Insert the username into the SQL query safely
+            //          using PreparedStatement (prevents SQL Injection).
             ps.setString(1, username);
+
+            // STEP 4 : Run the query and get the result.
             ResultSet rs = ps.executeQuery();
 
+            // STEP 5 : Check if a row was found for that username.
             if (rs.next()) {
-                // Retrieve stored BCrypt hash from database
+
+                // STEP 6 : Retrieve the hashed password stored in the database.
+                //          This is a BCrypt hash, e.g: "$2a$12$abc123..."
                 String storedHash = rs.getString("password");
 
-                // BCrypt.checkpw() re-hashes the input using the salt
-                // embedded in the stored hash, then compares the results
+                // STEP 7 : Use BCrypt to verify the password.
+                //          BCrypt.checkpw() takes the plain text password the user typed
+                //          and the stored hash from the database, then compares them.
+                //          It does NOT decrypt, it re-hashes and compares.
                 if (BCrypt.checkpw(password, storedHash)) {
 
-                    // Password matched — build User object
-                    // Only store id, username, role in session (never password)
+                    // STEP 8 : Password is correct! Build the User object.
+                    //          We store id, username, and role in the session.
                     user = new User();
                     user.setId(rs.getInt("id"));
                     user.setUsername(rs.getString("username"));
                     user.setRole(rs.getString("role"));
                 }
-                // If BCrypt.checkpw() returns false, user stays null → login fails
+                // If BCrypt.checkpw() returns false, password was wrong, user stays null
             }
-            // If rs.next() is false, username not found → user stays null
+            // If rs.next() is false, username was not found, user stays null
 
         } catch (SQLException e) {
             e.printStackTrace();
+            // If a database error occurs = user stays null
         }
 
-        // Returns User on success, null on failure
-        // LoginServlet checks: if (user == null) → redirect with ?error=1
+        // STEP 9 : Return the result.
+        //          LoginServlet checks:
+        //            if (user != null) = login success & save user in session
+        //            if (user == null) = login failed  & redirect with ?error=1
         return user;
     }
 
-    /**
-     * getSecurityQuestion() — Retrieves the security question for a username.
-     *
-     * Called by ForgotPasswordServlet Step 1 after receiving the username.
-     * The returned question key (e.g. "pet", "city") is passed as a URL
-     * parameter to forgot_password.jsp Step 2, where it is mapped to
-     * the full question text using questionMap.
-     *
-     * Returns null if the username does not exist in the database,
-     * which causes ForgotPasswordServlet to redirect with ?error=notfound.
-     *
-     * @param username  the username entered on forgot_password.jsp Step 1
-     * @return          security question key if found, null if not found
-     */
+
+    // METHOD 2: getSecurityQuestion()
+    // PURPOSE : Looks up the security question for a given username.
+    //           Used in "Forgot Password" — Step 1.
+    // CALLED BY: ForgotPasswordServlet, after user enters their username
     public String getSecurityQuestion(String username) {
+
+        // STEP 1 : Prepare the SQL query.
+        //          We only need the security_question column for this username.
         String sql = "SELECT security_question FROM users WHERE username = ?";
+
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            // STEP 2 : Insert the username safely using PreparedStatement.
+            //          .trim() removes any accidental spaces the user may have typed.
             ps.setString(1, username.trim());
+
+            // STEP 3 : Run the query.
             ResultSet rs = ps.executeQuery();
+
+            // STEP 4 : If a row is found, return the security question key.
+            //          Example values: "pet", "city", "mother"
+            //          The JSP (forgot_password.jsp) maps this key to a full question text.
             if (rs.next()) return rs.getString("security_question");
+
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        // Returns null if username not found
+
+        // STEP 5 : If username was not found, return null.
+        //          ForgotPasswordServlet checks:
+        //            if (question == null) = redirect with ?error=notfound
         return null;
     }
 
-    /**
-     * verifyAndResetPassword() — Verifies security answer and updates password.
-     *
-     * Called by ForgotPasswordServlet Step 2 after all input validation passes.
-     *
-     * How it works:
-     *   1. Fetches stored BCrypt hashed security answer from DB by username
-     *   2. Uses BCrypt.checkpw() to verify the entered answer
-     *      (answer is lowercased before comparison — case-insensitive)
-     *   3. If answer is correct → hashes new password with BCrypt.hashpw()
-     *      and runs UPDATE users SET password = ? WHERE username = ?
-     *   4. Returns a status string so ForgotPasswordServlet can redirect correctly
-     *
-     * Return values:
-     *   "ok"          = answer correct, password updated successfully
-     *   "wronganswer" = BCrypt.checkpw() returned false
-     *   "notfound"    = username does not exist in database
-     *   "database"    = SQLException occurred during update
-     *
-     * @param username     the username whose password is being reset
-     * @param answer       the plain text answer (already lowercased by servlet)
-     * @param newPassword  the new plain text password to hash and save
-     * @return             status string used by ForgotPasswordServlet for redirect
-     */
+
+    // METHOD 3: verifyAndResetPassword()
+    // PURPOSE : Verifies the user's security answer, then resets their password.
+    //           Used in "Forgot Password"  Step 2.
+    // CALLED BY: ForgotPasswordServlet, after user submits the answer & new password
+    //
+    // RETURN VALUES (used by ForgotPasswordServlet to decide the redirect):
+    //   "ok"          = success, password was updated
+    //   "wronganswer" = security answer was incorrect
+    //   "notfound"    = username does not exist in database
+    //   "database"    = a database error occurred
+    // ════════════════════════════════════════════════════════════════════════
     public String verifyAndResetPassword(String username, String answer, String newPassword) {
 
-        // ── Step 1: Fetch stored BCrypt hashed answer from DB ────────
+        // STEP 1: Fetch the stored (hashed) security answer from the database ──
         String storedAnswer = null;
         String sqlGet = "SELECT security_answer FROM users WHERE username = ?";
+
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sqlGet)) {
+
+            // Insert username safely into the query
             ps.setString(1, username);
             ResultSet rs = ps.executeQuery();
+
+            // If a row exists, grab the hashed security answer
             if (rs.next()) {
                 storedAnswer = rs.getString("security_answer");
             }
+
         } catch (SQLException e) {
             e.printStackTrace();
+            // Database error during fetch = return "database"
             return "database";
         }
 
-        // Username not found in database
+        // STEP 2: Check if the username actually exists
+        //    If storedAnswer is still null, no row was found for that username.
         if (storedAnswer == null) return "notfound";
 
-        // ── Step 2: Verify answer using BCrypt ───────────────────────
-        // answer is already lowercased by ForgotPasswordServlet before calling this
+        // STEP 3: Verify the security answer using BCrypt
+        //    The answer was already lowercased by ForgotPasswordServlet before
+        //    calling this method (case-insensitive comparison).
+        //    BCrypt.checkpw() compares the plain text answer with the stored hash.
         if (!BCrypt.checkpw(answer, storedAnswer)) return "wronganswer";
 
-        // ── Step 3: Hash new password and update in database ─────────
+        // STEP 4: Hash the new password and save it to the database
+        //    BCrypt.gensalt(12) generates a random salt with cost factor 12.
+        //    BCrypt.hashpw() combines the new password + salt into a secure hash.
         String newHash = BCrypt.hashpw(newPassword, BCrypt.gensalt(12));
+
         String sqlUp = "UPDATE users SET password = ? WHERE username = ?";
+
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sqlUp)) {
+
+            // Set the new hashed password and the target username
             ps.setString(1, newHash);
             ps.setString(2, username);
+
+            // Run the UPDATE query
             ps.executeUpdate();
-            return "ok"; // Password updated successfully
+
+            // STEP 5: Return "ok" to signal success
+            //    ForgotPasswordServlet will redirect to login page with success message.
+            return "ok";
+
         } catch (SQLException e) {
             e.printStackTrace();
+            // Database error during update, return "database"
             return "database";
         }
     }

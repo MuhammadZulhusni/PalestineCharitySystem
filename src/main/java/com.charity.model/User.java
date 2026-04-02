@@ -51,11 +51,9 @@ public class User {
 
     //
     // GETTERS AND SETTERS
-    // All fields are private (encapsulation) so they can only be
-    // accessed through these public getter and setter methods.
+    // All fields are private (encapsulation) so they can only be accessed through these public getter and setter methods.
     //   get = read the value of a field
     //   set = update the value of a field
-    //
 
     /**
      * Returns the user's unique database id.
