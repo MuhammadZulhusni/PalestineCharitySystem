@@ -150,7 +150,7 @@ CREATE TABLE donations (
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/yourusername/PalestineCharitySystem.git
+git clone https://github.com/MuhammadZulhusni/PalestineCharitySystem.git
 cd PalestineCharitySystem
 ```
 
