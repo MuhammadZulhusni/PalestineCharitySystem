@@ -1,27 +1,15 @@
 <%@ page import="com.charity.dao.CampaignDAO, com.charity.model.Campaign, com.charity.model.User, com.charity.util.DBConnection, java.util.List, java.sql.*" %>
 <%@ page contentType="text/html;charset=UTF-8" %>
 <%
-    // ── ACCESS CONTROL ──────────────────────────────────────────
-    // Get the logged-in user from session
-    // If no user in session → redirect to login
-    // Note: any role can access donor dashboard (DONOR users only in practice)
     User user = (User) session.getAttribute("user");
     if (user == null) {
         response.sendRedirect("login.jsp");
         return;
     }
 
-    // ── LOAD ACTIVE CAMPAIGNS ───────────────────────────────────
-    // Uses getActiveCampaigns() — only returns campaigns with status = 'ACTIVE'
-    // Inactive campaigns are completely hidden from donors
     CampaignDAO dao = new CampaignDAO();
     List<Campaign> campaigns = dao.getActiveCampaigns();
 
-    // ── DONOR PERSONAL STATS ────────────────────────────────────
-    // Inline SQL to calculate 3 personal stats for the stat cards:
-    //   total  = SUM of all donations by this user
-    //   cnt    = COUNT of all donations by this user
-    //   top_campaign = campaign title where this user donated the most (subquery)
     double totalDonated = 0;
     int donationCount = 0;
     String topCampaign = "—";
@@ -38,10 +26,32 @@
         if (rs.next()) {
             totalDonated  = rs.getDouble("total");
             donationCount = rs.getInt("cnt");
-            // Only overwrite default "—" if top_campaign is not null
             if (rs.getString("top_campaign") != null) topCampaign = rs.getString("top_campaign");
         }
     } catch (Exception e) { e.printStackTrace(); }
+
+    // ── PAGINATED HISTORY ─────────────────────────────────────
+    // Read page number from query param (default 1), page size = 10
+    int PAGE_SIZE = 10;
+    int currentPage = 1;
+    try {
+        String p = request.getParameter("histPage");
+        if (p != null) currentPage = Math.max(1, Integer.parseInt(p));
+    } catch (NumberFormatException ignored) {}
+
+    // Count total donations for this user (for pagination math)
+    int totalDonations = 0;
+    String sqlCount = "SELECT COUNT(*) FROM donations WHERE user_id=?";
+    try (Connection conn = DBConnection.getConnection();
+         PreparedStatement ps = conn.prepareStatement(sqlCount)) {
+        ps.setInt(1, user.getId());
+        ResultSet rs = ps.executeQuery();
+        if (rs.next()) totalDonations = rs.getInt(1);
+    } catch (Exception e) { e.printStackTrace(); }
+
+    int totalPages = (int) Math.ceil((double) totalDonations / PAGE_SIZE);
+    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+    int offset = (currentPage - 1) * PAGE_SIZE;
 %>
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -49,22 +59,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Donor Dashboard | Palestine Charity</title>
-
-    <%-- Google Fonts: Lora (headings/quotes) + DM Sans (body text) --%>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-    <%-- SweetAlert2: used for donation validation and success/error notifications --%>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
     <style>
-        /* ── CSS RESET ──────────────────────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* ── CSS VARIABLES (THEME) ──────────────────────────────
-           Two themes: dark and light.
-           Switching data-theme on <html> swaps all colors.
-           Theme preference saved to localStorage key 'donorTheme'. */
         [data-theme="dark"] {
             --bg:       #0b0e14;
             --surface:  #13171f;
@@ -85,9 +85,6 @@
             --muted:    #9ba3b8;
             --shadow:   rgba(0,0,0,0.07);
         }
-
-        /* ── GLOBAL COLOR TOKENS ────────────────────────────────
-           Palestine-themed accent colors used across both themes */
         :root {
             --green:     #1db954;
             --green-dim: rgba(29,185,84,0.12);
@@ -97,8 +94,6 @@
             --radius:    12px;
         }
 
-        /* ── BASE BODY ──────────────────────────────────────────
-           Smooth transition when switching dark/light theme */
         body {
             font-family: 'DM Sans', sans-serif;
             background: var(--bg);
@@ -107,9 +102,6 @@
             transition: background .25s, color .25s;
         }
 
-        /* ── TOP NAVIGATION BAR ─────────────────────────────────
-           Sticky navbar showing brand name, signed-in username,
-           theme toggle button, and Sign Out link */
         nav {
             position: sticky; top: 0; z-index: 200;
             background: var(--surface);
@@ -120,19 +112,11 @@
             backdrop-filter: blur(12px);
             transition: background .25s, border-color .25s;
         }
-        .nav-brand { display: flex; align-items: center; gap: 10px; }
-        .nav-brand-icon {
-            width: 32px; height: 32px; border-radius: 8px;
-            background: var(--green); display: flex; align-items: center;
-            justify-content: center; font-size: 16px;
-        }
         .nav-brand-text { font-family: 'Lora', serif; font-size: 17px; font-weight: 600; }
         .nav-brand-text span { color: var(--green); }
         .nav-right { display: flex; align-items: center; gap: 16px; }
         .nav-user { font-size: 13px; color: var(--text2); }
         .nav-user strong { color: var(--text); font-weight: 600; }
-
-        /* Theme toggle button — shows moon/sun emoji, switches on click */
         .theme-btn {
             width: 34px; height: 34px; border-radius: 8px;
             background: var(--surface2); border: 1px solid var(--border);
@@ -140,8 +124,6 @@
             justify-content: center; font-size: 15px; transition: border-color .2s;
         }
         .theme-btn:hover { border-color: var(--green); }
-
-        /* Sign out link → calls LogoutServlet */
         .nav-logout {
             font-size: 12.5px; font-weight: 500; color: var(--muted);
             text-decoration: none; padding: 7px 14px;
@@ -150,13 +132,8 @@
         }
         .nav-logout:hover { color: var(--red); border-color: rgba(230,57,70,0.3); background: rgba(230,57,70,0.06); }
 
-        /* ── PAGE LAYOUT ────────────────────────────────────────
-           Centered content area with max-width and padding */
         .page { max-width: 1180px; margin: 0 auto; padding: 36px 40px 60px; }
 
-        /* ── HERO BANNER ────────────────────────────────────────
-           Palestine-themed gradient banner at top of page.
-           Large flag emoji watermark in background (opacity 6%). */
         .hero {
             border-radius: var(--radius);
             background: linear-gradient(135deg, #0d2b1a 0%, #0b1d2e 60%, #1a0d0d 100%);
@@ -176,10 +153,6 @@
         .hero-title { font-family: 'Lora', serif; font-size: 28px; font-weight: 600; color: #e6e8f0; margin-bottom: 6px; }
         .hero-sub { font-size: 13.5px; color: #6b7a94; max-width: 520px; line-height: 1.6; }
 
-        /* ── PERSONAL STAT CARDS ────────────────────────────────
-           3-column grid showing donor's personal stats:
-           Total Donated | Donations Made | Top Campaign
-           Data loaded server-side via inline SQL (sqlStats) */
         .stats-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 32px; }
         .stat-card {
             background: var(--surface); border: 1px solid var(--border);
@@ -189,7 +162,6 @@
             animation: fadeUp .4s ease both;
         }
         .stat-card:hover { border-color: rgba(128,128,128,0.18); }
-        /* Staggered animation delay per card */
         .stat-card:nth-child(1){animation-delay:.05s;}
         .stat-card:nth-child(2){animation-delay:.10s;}
         .stat-card:nth-child(3){animation-delay:.15s;}
@@ -199,8 +171,6 @@
         .stat-value.green { color: var(--green); }
         .stat-note { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 
-        /* ── SECTION HEADERS ────────────────────────────────────
-           Row with section title (left) and count badge (right) */
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
         .section-title { font-family: 'Lora', serif; font-size: 19px; font-weight: 600; }
         .section-badge {
@@ -208,10 +178,6 @@
             background: var(--green-dim); padding: 4px 10px; border-radius: 20px;
         }
 
-        /* ── CAMPAIGN CARDS GRID ────────────────────────────────
-           Responsive grid — minimum 320px per card.
-           Each card shows: status, title, description,
-           goal vs raised, progress bar, and donate form. */
         .campaigns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap: 18px; margin-bottom: 40px; }
         .camp-card {
             background: var(--surface); border: 1px solid var(--border);
@@ -222,24 +188,17 @@
         }
         .camp-card:hover { border-color: rgba(29,185,84,0.25); transform: translateY(-2px); }
         .camp-card-top { padding: 20px 20px 16px; }
-
-        /* Status badge: "Active" (green pulsing dot) or "✓ Funded" (blue) */
         .camp-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; }
         .camp-status.active { color: var(--green); }
         .camp-status.active::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--green); animation: pulse 1.8s infinite; }
         .camp-status.complete { color: var(--blue); }
-
         .camp-title { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; margin-bottom: 7px; line-height: 1.4; }
         .camp-desc { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 14px; }
         .camp-meta { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
         .camp-meta strong { color: var(--text); font-weight: 600; }
-
-        /* Progress bar: green → gold when fully funded */
         .prog-track { background: var(--surface2); border-radius: 99px; height: 5px; overflow: hidden; margin-bottom: 16px; }
         .prog-fill { height: 5px; border-radius: 99px; background: linear-gradient(90deg, var(--green), #56efb0); transition: width .7s cubic-bezier(.4,0,.2,1); }
         .prog-fill.warn { background: linear-gradient(90deg, var(--gold), #ffd580); }
-
-        /* Card bottom: donate form OR status message (Fully Funded / Donations Paused) */
         .camp-card-bottom { padding: 14px 20px; border-top: 1px solid var(--border); background: var(--surface2); display: flex; gap: 8px; align-items: center; transition: background .25s; }
         .donate-input {
             flex: 1; background: var(--surface); border: 1px solid var(--border);
@@ -258,12 +217,25 @@
         .btn-donate:active { transform: translateY(0); }
         .btn-donate:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-        /* ── DONATION HISTORY TABLE ─────────────────────────────
-           Shows personal donation history for the logged-in donor.
-           Loaded via inline SQL JOIN (donations + campaigns).
-           Search bar filters rows in real-time via filterHistory(). */
-        .history-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 4px var(--shadow); transition: background .25s, border-color .25s; }
-        .table-toolbar { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        /* ── HISTORY TABLE ───────────────────────────────────── */
+        .history-wrap {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden;
+            box-shadow: 0 1px 4px var(--shadow);
+            transition: background .25s, border-color .25s;
+        }
+        .table-toolbar {
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: 10px;
+        }
+        .toolbar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .toolbar-info { font-size: 13px; color: var(--muted); }
+        .page-size-select {
+            background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text); padding: 6px 10px; border-radius: 7px;
+            font-size: 12.5px; font-family: inherit; outline: none; cursor: pointer;
+        }
         .search-input {
             background: var(--surface2); border: 1px solid var(--border);
             color: var(--text); padding: 8px 12px 8px 32px; border-radius: 7px;
@@ -273,6 +245,7 @@
             background-repeat: no-repeat; background-position: 10px center;
         }
         .search-input:focus { border-color: var(--green); }
+
         table { width: 100%; border-collapse: collapse; }
         thead th {
             padding: 11px 18px; text-align: left; font-size: 11px;
@@ -280,6 +253,12 @@
             letter-spacing: .8px; border-bottom: 1px solid var(--border);
             background: var(--surface2); transition: background .25s;
         }
+        /* Sortable column headers */
+        thead th.sortable { cursor: pointer; user-select: none; }
+        thead th.sortable:hover { color: var(--text); }
+        thead th .sort-icon { display: inline-block; margin-left: 4px; opacity: .35; font-style: normal; }
+        thead th.sort-asc .sort-icon, thead th.sort-desc .sort-icon { opacity: 1; color: var(--green); }
+
         tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
         tbody tr:last-child { border-bottom: none; }
         tbody tr:hover { background: rgba(128,128,128,0.04); }
@@ -287,8 +266,27 @@
         .amount-green { color: var(--green); font-weight: 600; }
         .empty-state { text-align: center; padding: 48px 24px; color: var(--muted); font-size: 13px; }
 
-        /* ── QURANIC QUOTE BANNER ───────────────────────────────
-           Decorative banner with Quranic verse about saving lives */
+        /* ── PAGINATION CONTROLS ─────────────────────────────── */
+        .pagination {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px; border-top: 1px solid var(--border);
+            flex-wrap: wrap; gap: 10px;
+        }
+        .pagination-info { font-size: 12.5px; color: var(--muted); }
+        .pagination-info strong { color: var(--text); }
+        .page-btns { display: flex; align-items: center; gap: 4px; }
+        .page-btn {
+            min-width: 32px; height: 32px; border-radius: 7px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text2); font-size: 12.5px; font-family: inherit;
+            cursor: pointer; display: flex; align-items: center;
+            justify-content: center; padding: 0 8px; transition: all .15s;
+        }
+        .page-btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+        .page-btn.active { background: var(--green); border-color: var(--green); color: #051a0d; font-weight: 700; cursor: default; }
+        .page-btn:disabled { opacity: .35; cursor: not-allowed; }
+        .page-ellipsis { font-size: 12.5px; color: var(--muted); padding: 0 4px; }
+
         .quote-banner {
             border-radius: var(--radius); border: 1px solid rgba(244,162,97,0.2);
             background: linear-gradient(135deg, rgba(244,162,97,0.06), rgba(230,57,70,0.04));
@@ -299,19 +297,13 @@
         .quote-text { font-family: 'Lora', serif; font-size: 14.5px; font-style: italic; color: var(--text2); line-height: 1.7; }
         .quote-text strong { color: var(--gold); font-style: normal; font-size: 12px; display: block; margin-top: 6px; font-family: 'DM Sans', sans-serif; letter-spacing: .5px; }
 
-        /* ── SWEETALERT2 OVERRIDES ──────────────────────────────
-           Match SweetAlert2 font and shape to the donor dashboard */
         .swal2-popup { font-family: 'DM Sans', sans-serif !important; border-radius: 14px !important; }
         .swal2-title { font-family: 'Lora', serif !important; font-size: 20px !important; }
         .swal2-confirm, .swal2-cancel { font-family: 'DM Sans', sans-serif !important; border-radius: 8px !important; font-weight: 600 !important; }
 
-        /* ── ANIMATIONS ─────────────────────────────────────────
-           pulse: used on Active campaign status dot
-           fadeUp: used on stat cards and campaign cards on load */
         @keyframes pulse { 0%,100%{opacity:1;}50%{opacity:.3;} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;} }
 
-        /* Custom scrollbar — thin and subtle */
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; }
@@ -319,34 +311,25 @@
 </head>
 <body>
 
-<%-- ── TOP NAVIGATION BAR ──────────────────────────────────────
-     Shows: brand name | signed-in username | theme toggle | sign out --%>
 <nav>
     <div class="nav-brand">
         <div class="nav-brand-text">Palestine <span>Relief</span></div>
     </div>
     <div class="nav-right">
-        <%-- Show current logged-in username from session --%>
         <div class="nav-user">Signed in as <strong><%= user.getUsername() %></strong></div>
-        <%-- Theme toggle: moon icon by default, switches to sun in dark mode --%>
         <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">🌙</button>
-        <%-- Sign out → LogoutServlet invalidates session --%>
         <a href="logout" class="nav-logout">Sign Out</a>
     </div>
 </nav>
 
 <div class="page">
 
-    <%-- ── HERO BANNER ──────────────────────────────────────────
-         Palestine-themed welcome banner with flag watermark --%>
     <div class="hero">
         <div class="hero-label">Donor Portal</div>
         <div class="hero-title">Every Donation Saves Lives</div>
         <div class="hero-sub">Your contributions directly support humanitarian aid, medical relief, and essential supplies for families in Palestine. Thank you for standing with them.</div>
     </div>
 
-    <%-- ── QURANIC QUOTE BANNER ─────────────────────────────────
-         Inspirational verse displayed below hero --%>
     <div class="quote-banner">
         <div class="quote-icon">📖</div>
         <div class="quote-text">
@@ -355,9 +338,6 @@
         </div>
     </div>
 
-    <%-- ── PERSONAL STAT CARDS ──────────────────────────────────
-         3 cards showing donor's personal stats loaded from sqlStats above:
-         Total Donated (green) | Donations Made | Top Campaign --%>
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-icon">💚</div>
@@ -374,63 +354,40 @@
         <div class="stat-card">
             <div class="stat-icon">🏆</div>
             <div class="stat-label">Top Campaign</div>
-            <%-- Shows campaign name or "—" if no donations yet --%>
             <div class="stat-value" style="font-size:15px;font-family:'Lora',serif;margin-top:4px;"><%= topCampaign %></div>
             <div class="stat-note">Your most supported cause</div>
         </div>
     </div>
 
-    <%-- ── ACTIVE CAMPAIGNS SECTION ─────────────────────────────
-         Section header with campaign count badge --%>
     <div class="section-header">
         <div class="section-title">Active Relief Campaigns</div>
         <div class="section-badge"><%= campaigns.size() %> campaigns</div>
     </div>
 
-    <%-- ── CAMPAIGN CARDS GRID ───────────────────────────────────
-         Loops through active campaigns loaded by getActiveCampaigns().
-         Each card shows: status badge, title, description,
-         goal/raised amounts, progress bar, and either:
-           - Donate form (if active and not fully funded)
-           - "Fully Funded" message (if complete)
-           - "Donations Paused" message (if INACTIVE — extra safety check) --%>
     <div class="campaigns-grid">
         <% for(Campaign c : campaigns) {
-            // Calculate progress percentage — capped at 100%
             double pct = c.getTargetAmount() > 0 ? Math.min((c.getCurrentAmount() / c.getTargetAmount()) * 100, 100) : 0;
-            // Fully funded if current amount >= target amount
             boolean complete = c.getCurrentAmount() >= c.getTargetAmount();
         %>
         <div class="camp-card">
             <div class="camp-card-top">
-                <%-- Status badge: green pulsing "Active" or blue "✓ Funded" --%>
                 <div class="camp-status <%= complete ? "complete" : "active" %>">
                     <%= complete ? "✓ Funded" : "Active" %>
                 </div>
                 <div class="camp-title"><%= c.getTitle() %></div>
                 <div class="camp-desc"><%= c.getDescription() %></div>
-
-                <%-- Goal vs Raised amounts --%>
                 <div class="camp-meta">
                     <span>Goal: <strong>RM <%= String.format("%,.0f", c.getTargetAmount()) %></strong></span>
                     <span>Raised: <strong style="color:var(--green);">RM <%= String.format("%,.0f", c.getCurrentAmount()) %></strong></span>
                 </div>
-
-                <%-- Progress bar: gold/warn color when fully funded --%>
                 <div class="prog-track">
                     <div class="prog-fill <%= pct >= 100 ? "warn" : "" %>" style="width:<%= pct %>%;"></div>
                 </div>
             </div>
-
-            <%-- Card bottom: show donate form OR status message --%>
             <% if (!complete && !"INACTIVE".equals(c.getStatus())) { %>
-                <%-- Campaign is active and not funded — show donate form
-                     Form submits POST to DonateServlet
-                     onsubmit calls validateDonate() to check minimum RM 1.00 --%>
                 <div class="camp-card-bottom">
                     <form action="donate" method="post" style="display:flex;gap:8px;width:100%;" onsubmit="return validateDonate(this)">
                         <input type="hidden" name="campaignId" value="<%= c.getId() %>">
-                        <%-- Calculate remaining outside the input tag for cleanliness --%>
                         <% double remaining = c.getTargetAmount() - c.getCurrentAmount(); %>
                         <input type="number" name="amount" placeholder="Amount (RM)"
                                min="1" step="0.01" max="<%= String.format("%.2f", remaining) %>"
@@ -440,92 +397,136 @@
                     </form>
                 </div>
             <% } else { %>
-                <%-- Campaign is either fully funded or inactive — show message instead --%>
                 <div class="camp-card-bottom" style="justify-content:center;">
                     <% if ("INACTIVE".equals(c.getStatus())) { %>
-                        <%-- Admin deactivated this campaign --%>
                         <span style="font-size:12.5px;color:var(--red);font-weight:500;">Donations Paused</span>
                     <% } else { %>
-                        <%-- Campaign reached its funding target --%>
                         <span style="font-size:12.5px;color:var(--blue);font-weight:500;">Fully Funded, Thank you!</span>
                     <% } %>
                 </div>
             <% } %>
         </div>
         <% } %>
-
-        <%-- Show message if no active campaigns exist --%>
         <% if (campaigns.isEmpty()) { %>
         <div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted);font-size:13px;">No campaigns available at the moment.</div>
         <% } %>
     </div>
 
-    <%-- ── PERSONAL DONATION HISTORY TABLE ──────────────────────
-         Shows all past donations made by the logged-in donor.
-         Inline SQL: JOIN donations + campaigns WHERE user_id = ?
-         Sorted newest first. Search bar filters rows in real-time. --%>
+    <%-- ── DONATION HISTORY: PAGINATED ───────────────────────────
+         Server renders only PAGE_SIZE rows per request.
+         totalDonations / PAGE_SIZE = totalPages for pagination nav.
+         Search is client-side (within the current page only) for speed;
+         for full cross-page search a dedicated search endpoint is preferred. --%>
     <div class="section-header">
         <div class="section-title">My Donation History</div>
+        <div class="section-badge"><%= totalDonations %> total</div>
     </div>
     <div class="history-wrap">
         <div class="table-toolbar">
-            <span style="font-size:13px;color:var(--muted);">All your past contributions</span>
-            <input type="text" class="search-input" placeholder="Search..." oninput="filterHistory(this.value)">
+            <div class="toolbar-left">
+                <span class="toolbar-info">
+                    <%
+                        int showing_from = totalDonations == 0 ? 0 : offset + 1;
+                        int showing_to   = Math.min(offset + PAGE_SIZE, totalDonations);
+                    %>
+                    Showing <strong><%= showing_from %>–<%= showing_to %></strong> of <strong><%= totalDonations %></strong>
+                </span>
+            </div>
+            <input type="text" class="search-input" placeholder="Filter this page…" oninput="filterHistory(this.value)" id="searchInput">
         </div>
+
         <table>
             <thead>
                 <tr>
-                    <th>Campaign</th>
-                    <th>Amount</th>
-                    <th>Date &amp; Time</th>
+                    <%-- Sortable columns — sort state tracked in JS, re-sorts current page rows --%>
+                    <th class="sortable" data-col="0" onclick="sortTable(0)">Campaign <i class="sort-icon">↕</i></th>
+                    <th class="sortable" data-col="1" onclick="sortTable(1)">Amount <i class="sort-icon">↕</i></th>
+                    <th class="sortable" data-col="2" onclick="sortTable(2)">Date &amp; Time <i class="sort-icon">↕</i></th>
                 </tr>
             </thead>
             <tbody id="historyBody">
                 <%
-                    // Inline SQL: fetch this donor's donation history
-                    // JOIN campaigns to show campaign title instead of just id
+                    // Fetch only PAGE_SIZE rows with LIMIT + OFFSET
                     String sql = "SELECT c.title, d.amount, d.donation_date FROM donations d " +
                                  "JOIN campaigns c ON d.campaign_id = c.id " +
-                                 "WHERE d.user_id = ? ORDER BY d.donation_date DESC";
+                                 "WHERE d.user_id = ? ORDER BY d.donation_date DESC " +
+                                 "LIMIT ? OFFSET ?";
                     boolean hasHistory = false;
                     try (Connection conn = DBConnection.getConnection();
                          PreparedStatement ps = conn.prepareStatement(sql)) {
-                        ps.setInt(1, user.getId()); // Only fetch THIS donor's records
+                        ps.setInt(1, user.getId());
+                        ps.setInt(2, PAGE_SIZE);
+                        ps.setInt(3, offset);
                         ResultSet rs = ps.executeQuery();
                         while (rs.next()) {
                             hasHistory = true;
                 %>
                 <tr>
                     <td><strong><%= rs.getString("title") %></strong></td>
-                    <td class="amount-green">RM <%= String.format("%,.2f", rs.getDouble("amount")) %></td>
-                    <td style="color:var(--muted);font-size:12.5px;"><%= rs.getTimestamp("donation_date") %></td>
+                    <td class="amount-green" data-amount="<%= rs.getDouble("amount") %>">RM <%= String.format("%,.2f", rs.getDouble("amount")) %></td>
+                    <td style="color:var(--muted);font-size:12.5px;" data-ts="<%= rs.getTimestamp("donation_date").getTime() %>"><%= rs.getTimestamp("donation_date") %></td>
                 </tr>
                 <%
                         }
                     } catch (Exception e) { e.printStackTrace(); }
-                    // Show empty state message if no donations found
                     if (!hasHistory) {
                 %>
                 <tr><td colspan="3"><div class="empty-state">You haven't made any donations yet. Start giving today! 🤲</div></td></tr>
                 <% } %>
             </tbody>
             <tbody id="noResultsRow" style="display:none;">
-                <tr>
-                    <td colspan="3">
-                        <div class="empty-state">No donations found matching your search.</div>
-                    </td>
-                </tr>
+                <tr><td colspan="3"><div class="empty-state">No donations match your filter.</div></td></tr>
             </tbody>
         </table>
+
+        <%-- ── PAGINATION NAV ──────────────────────────────────
+             Rendered server-side. Shows prev / page numbers / next.
+             Only show if more than one page exists. --%>
+        <% if (totalPages > 1) { %>
+        <div class="pagination">
+            <div class="pagination-info">
+                Page <strong><%= currentPage %></strong> of <strong><%= totalPages %></strong>
+            </div>
+            <div class="page-btns">
+                <%-- Previous button --%>
+                <% if (currentPage > 1) { %>
+                    <a href="?histPage=<%= currentPage - 1 %>" class="page-btn">&#8592;</a>
+                <% } else { %>
+                    <button class="page-btn" disabled>&#8592;</button>
+                <% } %>
+
+                <%-- Page number buttons: show first, last, current ±1, and ellipsis --%>
+                <%
+                    for (int p = 1; p <= totalPages; p++) {
+                        boolean showBtn = (p == 1 || p == totalPages || Math.abs(p - currentPage) <= 1);
+                        boolean prevWasHidden = (p > 2 && Math.abs((p-1) - currentPage) > 1 && p - 1 != 1);
+                        boolean nextWillHide = (p < totalPages - 1 && Math.abs(p - currentPage) > 1 && p + 1 != totalPages && Math.abs((p+1) - currentPage) > 1);
+                        if (!showBtn) {
+                            if (prevWasHidden) { %><span class="page-ellipsis">…</span><% }
+                            continue;
+                        }
+                %>
+                <% if (p == currentPage) { %>
+                    <button class="page-btn active"><%= p %></button>
+                <% } else { %>
+                    <a href="?histPage=<%= p %>" class="page-btn"><%= p %></a>
+                <% } %>
+                <% } %>
+
+                <%-- Next button --%>
+                <% if (currentPage < totalPages) { %>
+                    <a href="?histPage=<%= currentPage + 1 %>" class="page-btn">&#8594;</a>
+                <% } else { %>
+                    <button class="page-btn" disabled>&#8594;</button>
+                <% } %>
+            </div>
+        </div>
+        <% } %>
     </div>
 
 </div><%-- /page --%>
 
 <script>
-    /* ── THEME ──────────────────────────────────────────────────
-       On load: read saved theme from localStorage (default: dark).
-       applyTheme() sets data-theme on <html> and updates button icon.
-       Moon = dark mode, Sun = light mode. */
     var html = document.documentElement;
     var themeBtn = document.getElementById('themeBtn');
 
@@ -536,19 +537,13 @@
 
     function applyTheme(theme) {
         html.setAttribute('data-theme', theme);
-        // Sun icon when in dark mode (click to switch to light)
-        // Moon icon when in light mode (click to switch to dark)
         themeBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
         localStorage.setItem('donorTheme', theme);
     }
-
     function toggleTheme() {
         applyTheme(html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     }
 
-    /* ── SWEETALERT2 BASE CONFIG ────────────────────────────────
-       Returns theme-aware base config for SweetAlert2 modals.
-       Used for donation validation warning and success/error alerts. */
     function getSwalBase() {
         var isDark = html.getAttribute('data-theme') === 'dark';
         return {
@@ -558,64 +553,105 @@
         };
     }
 
-    /* ── DONATION FORM VALIDATION ───────────────────────────────
-       Called on form submit via onsubmit="return validateDonate(this)"
-       Checks that amount is a valid number and at least RM 1.00.
-       Returns false to block submission and show SweetAlert2 warning.
-       Returns true to allow the form to submit to DonateServlet. */
-        function validateDonate(form) {
-            var amt = parseFloat(form.amount.value);
-            var remaining = parseFloat(form.amount.getAttribute('data-remaining'));
+    function validateDonate(form) {
+        var amt = parseFloat(form.amount.value);
+        var remaining = parseFloat(form.amount.getAttribute('data-remaining'));
+        if (!amt || amt < 1) {
+            Swal.fire(Object.assign({}, getSwalBase(), {
+                title: 'Invalid Amount',
+                text: 'Please enter a minimum donation of RM 1.00.',
+                icon: 'warning', iconColor: '#f4a261',
+            }));
+            return false;
+        }
+        if (amt > remaining) {
+            Swal.fire(Object.assign({}, getSwalBase(), {
+                title: 'Amount Exceeds Goal',
+                html: '<p style="font-size:14px;line-height:1.6;">This campaign only needs <strong style="color:#1db954;">RM ' +
+                      remaining.toLocaleString('en-MY', {minimumFractionDigits:2}) +
+                      '</strong> more to reach its goal.<br>Please enter an amount within that limit.</p>',
+                icon: 'warning', iconColor: '#f4a261',
+            }));
+            return false;
+        }
+        return true;
+    }
 
-            if (!amt || amt < 1) {
-                Swal.fire(Object.assign({}, getSwalBase(), {
-                    title: 'Invalid Amount',
-                    text: 'Please enter a minimum donation of RM 1.00.',
-                    icon: 'warning', iconColor: '#f4a261',
-                }));
-                return false;
-            }
+    /* ── CLIENT-SIDE FILTER (current page only) ──────────────────
+       Filters the rendered rows in real-time. Clears sort state too. */
+    function filterHistory(q) {
+        var rows = document.querySelectorAll('#historyBody tr');
+        var visible = 0;
+        rows.forEach(function(r) {
+            var match = r.textContent.toLowerCase().includes(q.toLowerCase());
+            r.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+        document.getElementById('noResultsRow').style.display = (visible === 0 && q.length > 0) ? '' : 'none';
+    }
 
-            if (amt > remaining) {
-                Swal.fire(Object.assign({}, getSwalBase(), {
-                    title: 'Amount Exceeds Goal',
-                    html: '<p style="font-size:14px;line-height:1.6;">This campaign only needs <strong style="color:#1db954;">RM ' +
-                          remaining.toLocaleString('en-MY', {minimumFractionDigits:2}) +
-                          '</strong> more to reach its goal.<br>Please enter an amount within that limit.</p>',
-                    icon: 'warning', iconColor: '#f4a261',
-                }));
-                return false;
-            }
+    /* ── CLIENT-SIDE SORT (current page only) ───────────────────
+       Sorts the already-rendered tbody rows without a server round-trip.
+       sortState tracks column index and direction. */
+    var sortState = { col: -1, asc: true };
 
-            return true;
+    function sortTable(colIdx) {
+        var headers = document.querySelectorAll('thead th.sortable');
+        var body    = document.getElementById('historyBody');
+        var rows    = Array.from(body.querySelectorAll('tr')).filter(function(r){ return r.cells.length > 1; });
+
+        // Toggle direction if same column clicked again
+        if (sortState.col === colIdx) {
+            sortState.asc = !sortState.asc;
+        } else {
+            sortState.col = colIdx;
+            sortState.asc = true;
         }
 
-    /* ── DONATION HISTORY SEARCH ────────────────────────────────
-       Filters history table rows in real-time as user types.
-       Hides rows that don't contain the search query. */
-        function filterHistory(q) {
-            var rows = document.querySelectorAll('#historyBody tr');
-            var visibleCount = 0;
+        // Update header indicators
+        headers.forEach(function(th, i) {
+            th.classList.remove('sort-asc', 'sort-desc');
+            th.querySelector('.sort-icon').textContent = '↕';
+            if (i === colIdx) {
+                th.classList.add(sortState.asc ? 'sort-asc' : 'sort-desc');
+                th.querySelector('.sort-icon').textContent = sortState.asc ? '↑' : '↓';
+            }
+        });
 
-            rows.forEach(function(r) {
-                var match = r.textContent.toLowerCase().includes(q.toLowerCase());
-                r.style.display = match ? '' : 'none';
-                if (match) visibleCount++;
-            });
+        rows.sort(function(a, b) {
+            var aCell = a.cells[colIdx];
+            var bCell = b.cells[colIdx];
+            var aVal, bVal;
 
-            // Show or hide the "not found" message based on results
-            document.getElementById('noResultsRow').style.display = visibleCount === 0 ? '' : 'none';
-        }
+            if (colIdx === 1) {
+                // Amount: use numeric data attribute
+                aVal = parseFloat(aCell.getAttribute('data-amount') || 0);
+                bVal = parseFloat(bCell.getAttribute('data-amount') || 0);
+                return sortState.asc ? aVal - bVal : bVal - aVal;
+            } else if (colIdx === 2) {
+                // Date: use timestamp data attribute
+                aVal = parseInt(aCell.getAttribute('data-ts') || 0);
+                bVal = parseInt(bCell.getAttribute('data-ts') || 0);
+                return sortState.asc ? aVal - bVal : bVal - aVal;
+            } else {
+                // Campaign name: alphabetic
+                aVal = aCell.textContent.trim().toLowerCase();
+                bVal = bCell.textContent.trim().toLowerCase();
+                return sortState.asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+        });
 
-    /* ── URL MESSAGE HANDLER ────────────────────────────────────
-       After DonateServlet redirects back with ?status=success or ?status=error,
-       show the matching SweetAlert2 notification.
-       Then clean the URL using replaceState so refreshing the page
-       doesn't re-show the alert. */
+        // Re-append in sorted order
+        rows.forEach(function(r) { body.appendChild(r); });
+
+        // Re-apply current filter if any
+        var q = document.getElementById('searchInput').value;
+        if (q) filterHistory(q);
+    }
+
+    /* ── URL MESSAGE HANDLER ─────────────────────────────────── */
     var params = new URLSearchParams(window.location.search);
-
     if (params.get('status') === 'success') {
-        // Shown after DonateServlet successfully inserts the donation
         Swal.fire(Object.assign({}, getSwalBase(), {
             title: 'Donation Received! 💚',
             html: '<p style="font-size:14px;line-height:1.6;">JazakAllah Khayran for your generosity.<br>Your contribution makes a real difference.</p>',
@@ -624,9 +660,7 @@
         }));
         window.history.replaceState({}, document.title, window.location.pathname);
     }
-
     if (params.get('status') === 'error') {
-        // Shown if DonateServlet encounters a database error
         Swal.fire(Object.assign({}, getSwalBase(), {
             title: 'Something went wrong',
             text: 'Your donation could not be processed. Please try again.',
@@ -634,7 +668,6 @@
         }));
         window.history.replaceState({}, document.title, window.location.pathname);
     }
-
     if (params.get('status') === 'exceeds_goal') {
         Swal.fire(Object.assign({}, getSwalBase(), {
             title: 'Donation Blocked',

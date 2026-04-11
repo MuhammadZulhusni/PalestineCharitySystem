@@ -21,6 +21,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
     <%-- SweetAlert2: used for all modals, confirmations, and notifications --%>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
@@ -638,35 +641,47 @@
        Opens a SweetAlert2 modal showing campaign description
        and donor history table. Donor list is fetched via AJAX
        from get_campaign_donors.jsp?id=X and injected into the modal. */
-    function viewDetails(id, title, desc) {
-        var c = getColors();
-        Swal.fire(Object.assign({}, getSwalBase(), {
-            title: title,
-            html:
-                '<p style="font-size:11px;color:' + c.muted + ';text-transform:uppercase;letter-spacing:.7px;text-align:left;margin-bottom:5px;">Description</p>' +
-                '<p style="color:' + c.text2 + ';font-size:13px;text-align:left;margin-bottom:12px;">' + desc + '</p>' +
-                '<p style="font-size:11px;color:' + c.muted + ';text-transform:uppercase;letter-spacing:.7px;text-align:left;margin-bottom:6px;">Donor History</p>' +
-                '<div style="max-height:280px;overflow-y:auto;border-radius:8px;border:1px solid ' + c.border + ';">' +
-                    '<table class="donor-table">' +
-                        '<thead><tr>' +
-                            '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Donor</th>' +
-                            '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Amount</th>' +
-                            '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Date</th>' +
-                        '</tr></thead>' +
-                        '<tbody id="donor-list-content"><tr><td colspan="3"><div class="spinner"></div></td></tr></tbody>' +
-                    '</table>' +
-                '</div>',
-            width: '580px',
-            showCloseButton: true,
-            showConfirmButton: false,
-            didOpen: function() {
-                // AJAX fetch donor list from get_campaign_donors.jsp
-                fetch('get_campaign_donors.jsp?id=' + id)
-                    .then(function(r){ return r.text(); })
-                    .then(function(data){ document.getElementById('donor-list-content').innerHTML = data; });
-            }
-        }));
-    }
+        function viewDetails(id, title, desc) {
+            var c = getColors();
+            Swal.fire(Object.assign({}, getSwalBase(), {
+                title: title,
+                html:
+                    '<p style="font-size:11px;color:' + c.muted + ';text-transform:uppercase;letter-spacing:.7px;text-align:left;margin-bottom:5px;">Description</p>' +
+                    '<p style="color:' + c.text2 + ';font-size:13px;text-align:left;margin-bottom:12px;">' + desc + '</p>' +
+                    '<p style="font-size:11px;color:' + c.muted + ';text-transform:uppercase;letter-spacing:.7px;text-align:left;margin-bottom:6px;">Donor History</p>' +
+                    '<div style="max-height:240px;overflow-y:auto;border-radius:8px;border:1px solid ' + c.border + ';">' +
+                        '<table class="donor-table">' +
+                            '<thead><tr>' +
+                                '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Donor</th>' +
+                                '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Amount</th>' +
+                                '<th style="color:' + c.muted + ';background:' + c.surface2 + ';">Date</th>' +
+                            '</tr></thead>' +
+                            '<tbody id="donor-list-content"><tr><td colspan="3"><div class="spinner"></div></td></tr></tbody>' +
+                        '</table>' +
+                    '</div>' +
+                    // Export buttons row
+                    '<div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">' +
+                        '<button onclick="exportDonorCSV(\'' + title.replace(/'/g, "\\'") + '\')" ' +
+                            'style="padding:8px 16px;border-radius:7px;border:1px solid rgba(0,201,110,0.3);background:rgba(0,201,110,0.1);color:#00c96e;font-size:12.5px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif;display:flex;align-items:center;gap:6px;">' +
+                            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+                            'CSV' +
+                        '</button>' +
+                        '<button onclick="exportDonorPDF(\'' + title.replace(/'/g, "\\'") + '\',\'' + desc.replace(/'/g, "\\'") + '\')" ' +
+                            'style="padding:8px 16px;border-radius:7px;border:1px solid rgba(74,158,255,0.3);background:rgba(74,158,255,0.1);color:#4a9eff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif;display:flex;align-items:center;gap:6px;">' +
+                            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>' +
+                            'PDF' +
+                        '</button>' +
+                    '</div>',
+                width: '580px',
+                showCloseButton: true,
+                showConfirmButton: false,
+                didOpen: function() {
+                    fetch('get_campaign_donors.jsp?id=' + id)
+                        .then(function(r){ return r.text(); })
+                        .then(function(data){ document.getElementById('donor-list-content').innerHTML = data; });
+                }
+            }));
+        }
 
     /* ── EDIT CAMPAIGN MODAL ────────────────────────────────────
        Step 1: Show loading spinner inside SweetAlert2
@@ -928,6 +943,7 @@
        so refreshing the page doesn't re-show the alert. */
     var urlParams = new URLSearchParams(window.location.search);
     if(urlParams.get('msg') === 'has_donations') Swal.fire(Object.assign({}, getSwalBase(), {title:'Cannot Delete', text:'This campaign has existing donations and cannot be removed.', icon:'error', iconColor:'#ff4f5e'}));
+    if(urlParams.get('msg') === 'deleted')       Swal.fire(Object.assign({}, getSwalBase(), {title:'Campaign Deleted', text:'The campaign has been permanently removed.', icon:'success', iconColor:'#00c96e'}));
     if(urlParams.get('msg') === 'added')         Swal.fire(Object.assign({}, getSwalBase(), {title:'Campaign Created', text:'The new campaign is now live.', icon:'success', iconColor:'#00c96e'}));
     if(urlParams.get('msg') === 'updated')       Swal.fire(Object.assign({}, getSwalBase(), {title:'Changes Saved', text:'Campaign updated successfully.', icon:'success', iconColor:'#00c96e'}));
     if(urlParams.get('msg') === 'toggled')       Swal.fire(Object.assign({}, getSwalBase(), {title:'Status Updated', text:'Campaign status has been changed.', icon:'success', iconColor:'#00c96e'}));
@@ -943,6 +959,95 @@
        redirects), automatically open that section instead of default. */
     var sectionParam = urlParams.get('section');
     if(sectionParam) showSection(sectionParam);
+
+    /* ── EXPORT DONORS AS CSV ───────────────────────────────────── */
+    function exportDonorCSV(campaignTitle) {
+        var rows = document.querySelectorAll('#donor-list-content tr');
+        if (!rows.length) { alert('No data to export.'); return; }
+
+        var csv = 'Donor,Amount (RM),Date\n';
+        rows.forEach(function(row) {
+            var cells = row.querySelectorAll('td');
+            if (cells.length < 3) return;
+            var donor  = cells[0].textContent.trim().replace(/,/g, ' ');
+            var amount = cells[1].textContent.trim().replace('RM', '').replace(/,/g, '').trim();
+            var date   = cells[2].textContent.trim();
+            csv += '"' + donor + '",' + amount + ',"' + date + '"\n';
+        });
+
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        var url  = URL.createObjectURL(blob);
+        var a    = document.createElement('a');
+        a.href     = url;
+        a.download = campaignTitle.replace(/[^a-z0-9]/gi, '_') + '_donors.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    /* ── EXPORT DONORS AS PDF ───────────────────────────────────── */
+    function exportDonorPDF(campaignTitle, campaignDesc) {
+        var rows = document.querySelectorAll('#donor-list-content tr');
+        if (!rows.length) { alert('No data to export.'); return; }
+
+        var { jsPDF } = window.jspdf;
+        var doc = new jsPDF();
+
+        // Header
+        doc.setFontSize(18);
+        doc.setTextColor(0, 201, 110);
+        doc.text(campaignTitle, 14, 20);
+
+        doc.setFontSize(10);
+        doc.setTextColor(120, 120, 140);
+        doc.text('Campaign Donor Report', 14, 28);
+        doc.text('Generated: ' + new Date().toLocaleString('en-MY'), 14, 34);
+
+        // Description
+        doc.setTextColor(80, 80, 100);
+        doc.setFontSize(9);
+        var descLines = doc.splitTextToSize(campaignDesc, 180);
+        doc.text(descLines, 14, 42);
+
+        // Table data
+        var tableRows = [];
+        rows.forEach(function(row) {
+            var cells = row.querySelectorAll('td');
+            if (cells.length < 3) return;
+            tableRows.push([
+                cells[0].textContent.trim(),
+                cells[1].textContent.trim(),
+                cells[2].textContent.trim()
+            ]);
+        });
+
+        doc.autoTable({
+            startY: 42 + (descLines.length * 5),
+            head: [['Donor', 'Amount', 'Date']],
+            body: tableRows,
+            headStyles: {
+                fillColor: [0, 201, 110],
+                textColor: [10, 26, 16],
+                fontStyle: 'bold',
+                fontSize: 10
+            },
+            bodyStyles: { fontSize: 9, textColor: [40, 40, 60] },
+            alternateRowStyles: { fillColor: [245, 246, 250] },
+            styles: { cellPadding: 4 }
+        });
+
+        // Footer
+        var pageCount = doc.internal.getNumberOfPages();
+        for (var i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(160, 160, 180);
+            doc.text('CharityAdmin — Page ' + i + ' of ' + pageCount, 14, doc.internal.pageSize.height - 10);
+        }
+
+        doc.save(campaignTitle.replace(/[^a-z0-9]/gi, '_') + '_donors.pdf');
+    }
 </script>
 </body>
 </html>
